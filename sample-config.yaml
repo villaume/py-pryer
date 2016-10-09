@@ -1,0 +1,5 @@
+default:
+  spotify:
+    client_id: 'someStringBlue' # app client_id
+    client_secret: 'someStringBorrowed' # app client_secret
+    redirect_uri: 'someStringLikeAnURI' # app redirect uri
