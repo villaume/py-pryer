@@ -5,6 +5,12 @@ const querystring = require('querystring');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const yaml_config = require('yaml-config');
+const SpotifyWebApi = require('spotify-web-api-node');
+const Q = require('q');
+const _ = require('lodash');
+const Promise = require('bluebird');
+const fs = require('fs');
+const Transform = require('stream').Transform;
 
 try {
     var super_secret = yaml_config.readConfig(path.join(__dirname, '../config.yaml'));
@@ -32,11 +38,174 @@ var generateRandomString = function(length) {
   return text;
 };
 
+var promiseWhile = function (condition, payload) {
+	var done = Q.defer();
+	function loop () {
+		if (!condition()) {
+			return done.resolve();
+		}
+		else {
+			Q.when(payload(), loop, done.reject);
+		}
+	}
+
+	Q.nextTick(loop);
+	return done.promise;
+};
+
+function squash(arr) {
+  const flat = [].concat(...arr)
+  return flat.some(Array.isArray) ? squash(flat) : flat;
+};
+
+
+var get_all_personal_playlists = function(client, user_id) {
+  var keep_going = true;
+  var counter = 0;
+  var sink = [];
+
+  return promiseWhile(() => {
+  			return keep_going === true;
+  }, () => {
+		counter++;
+		return client.getUserPlaylists(user_id,{ 'offset' : (counter-1)*20, 'limit' : 20})
+			.then(results => {
+        //console.log('cnter',counter)
+        if (results.body.next === null) {
+          keep_going = false;
+        } else {
+					keep_going = true;
+				}
+        //console.log(results.body.items);
+
+        var pwd_lists = _.reject(results.body.items, elem => {
+          return elem.owner.id != user_id;
+        });
+        //console.log(pwd_lists);
+        sink.push(pwd_lists);
+
+			});
+
+		}).then(() => {
+			return squash(sink);
+    });
+};
+
+
+var get_all_tracks_of_a_playlists = function(client, user_id, playlist_id,payload) {
+  var keep_going = true;
+  var counter = 0;
+  var sink = [];
+  var payload = payload || {};
+
+  return promiseWhile(() => {
+  			return keep_going === true;
+  }, () => {
+		counter++;
+		return client.getPlaylistTracks(user_id,playlist_id,{ 'offset' : (counter-1)*100, 'limit' : 100})
+			.then(results => {
+        console.log('cnter_songs',counter)
+        if (results.body.next === null) {
+          keep_going = false;
+        } else {
+					keep_going = true;
+				}
+        var mapped_track_results = _.map(results.body.items, elem => {
+          return {
+            track_name: elem.track.name,
+            track_artist: elem.track.artists[0].name,
+            track_popularity: elem.track.popularity,
+            track_added_at: elem.added_at
+          };
+        });
+        //console.log(results.body.items);
+        sink.push(JSON.stringify(mapped_track_results));
+
+			});
+		}).then(() => {
+			return squash(sink);
+    });
+};
+
+var get_all_playlists_and_tracks = function(client, user_id) {
+  var keep_going = true;
+  var counter = 0;
+  var sink = [];
+  var payload = payload || {};
+  var stream = new Transform({ objectMode: true });
+
+  return promiseWhile(() => {
+  			return keep_going === true;
+  }, () => {
+		counter++;
+    return client.getUserPlaylists(user_id,{ 'offset' : (counter-1)*20, 'limit' : 20})
+      .then(results => {
+        var deferred = Q.defer();
+        if (results.body.next === null) {
+          keep_going = false;
+        } else {
+          keep_going = true;
+        }
+        var self_owned_lists = _.reject(results.body.items, elem => {
+          return elem.owner.id != user_id;
+        });
+
+        return Promise.each(self_owned_lists, elem => {
+          return client.getPlaylistTracks(user_id,elem.id,{ 'offset' : 0, 'limit' : 100})
+            .then((tracks) => {
+              var mapped_track_results = _.map(tracks.body.items, elem => {
+                return {
+                  track_name: elem.track.name,
+                  track_artist: elem.track.artists[0].name,
+                  track_popularity: elem.track.popularity,
+                  track_added_at: elem.added_at
+                };
+              });
+              var formatting = {
+                playlist_id: elem.id,
+                playlist_name: elem.name,
+                tracks: mapped_track_results
+              };
+            stream.push(JSON.stringify(formatting) + '\n');
+            })
+        }).then((originalArray) => {
+          console.log('iterating over playlists, at batch: '+counter)
+          return Promise.resolve(originalArray)
+        })
+
+      });
+
+		}).then(() => {
+      console.log('pulled up to 100 tracks for all self-owned playlists');
+      stream.push(null);
+			return stream;
+    });
+};
+
+
+var get_everything = function(client, user_id) {
+  var deferred = Q.defer();
+  var upstream = fs.createWriteStream('playlistsTracks.txt', {
+     encoding: "UTF-8"
+   });
+   upstream
+				.on('error', deferred.reject)
+				.on('end', function () {
+					deferred.resolve(file_key);
+				});
+    get_all_playlists_and_tracks(client, user_id)
+      .then(result_stream => {
+        result_stream
+          .pipe(upstream)
+          .on('error', deferred.reject)
+      });
+  return deferred.promise;
+};
+
 var stateKey = 'spotify_auth_state';
 
 var app = express();
-//console.log(__dirname + '/public');
-//console.log(__dirname + '/../');
+
 app.use(express.static(path.join(__dirname, '../')))
    .use(cookieParser());
 
@@ -143,20 +312,54 @@ app.get('/refresh_token', function(req, res) {
 });
 
 app.get('/get_playlists', function(req, res) {
-
-  // requesting access token from refresh token
   var refresh_token = req.query.refresh_token;
   var access_token = req.query.access_token;
-  var playlistOptions = {
-    url: 'https://api.spotify.com/v1/users/' + USR_ID+'/playlists',
-    headers: { 'Authorization': 'Bearer ' + access_token },
-
-    json: true
-  };
-
-  request.post(playlistOptions, function(error, response, body) {
-        console.log(body);
+  var spotifyApi = new SpotifyWebApi({
+    client_id,
+    client_secret,
+    redirect_uri
   });
+  spotifyApi.setAccessToken(access_token);
+  get_all_personal_playlists(spotifyApi,USR_ID)
+    .then(rza => {
+      console.log(rza);
+    });
+
+});
+
+app.get('/get_songs', function(req, res) {
+  var refresh_token = req.query.refresh_token;
+  var access_token = req.query.access_token;
+  var spotifyApi = new SpotifyWebApi({
+    client_id,
+    client_secret,
+    redirect_uri
+  });
+  spotifyApi.setAccessToken(access_token);
+
+  get_all_tracks_of_a_playlists(spotifyApi,USR_ID,'4pXJ8l5OAwWHKswqvA4Le5')
+  .then(rza => {
+    console.log('all_tracks:',rza);
+  });
+
+});
+
+app.get('/get_everything', function(req, res) {
+  var refresh_token = req.query.refresh_token;
+  var access_token = req.query.access_token;
+  var spotifyApi = new SpotifyWebApi({
+    client_id,
+    client_secret,
+    redirect_uri
+  });
+  spotifyApi.setAccessToken(access_token);
+  get_everything(spotifyApi,USR_ID)
+  .then(rza => {
+    console.log('everything:',rza);
+
+  });
+
+
 });
 
 
