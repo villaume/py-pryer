@@ -30,6 +30,8 @@
         </div>
         <button class="btn btn-default" id="obtain-new-token">Obtain new token using the refresh token</button>
         <button class="btn btn-default" id="get_playlists">Get Playlists</button>
+        <button class="btn btn-default" id="get_songs">Get Tracks</button>
+        <button class="btn btn-default" id="get_everything">Get Tracks in all Playlists</button>
       </div>
     </div>
 
@@ -138,6 +140,28 @@
           document.getElementById('get_playlists').addEventListener('click', function() {
             $.ajax({
               url: '/get_playlists',
+              data: {'refresh_token': refresh_token,
+                'access_token': access_token
+
+            }
+            }).done(function(data) {
+              console.log(data);
+            });
+          }, false);
+          document.getElementById('get_songs').addEventListener('click', function() {
+            $.ajax({
+              url: '/get_songs',
+              data: {'refresh_token': refresh_token,
+                'access_token': access_token
+
+            }
+            }).done(function(data) {
+              console.log(data);
+            });
+          }, false);
+          document.getElementById('get_everything').addEventListener('click', function() {
+            $.ajax({
+              url: '/get_everything',
               data: {'refresh_token': refresh_token,
                 'access_token': access_token
 
