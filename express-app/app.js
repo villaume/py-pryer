@@ -218,7 +218,7 @@ app.get('/login', function(req, res) {
   res.cookie(stateKey, state)
 
   // your application requests authorization
-  var scope = 'user-read-private user-read-email playlist-read-private playlist-read-collaborative user-library-read user-top-read';
+  var scope = 'user-read-private user-read-email playlist-read-private playlist-read-collaborative user-library-read user-top-read user-read-recently-played'
   res.redirect('https://accounts.spotify.com/authorize?' +
     querystring.stringify({
       response_type: 'code',
@@ -360,6 +360,36 @@ app.get('/get_everything', function(req, res) {
     debug(rza)
 
   })
+
+})
+
+// app.get('/get_recently_played_tracks', function(req, res) {
+//   var access_token = req.query.access_token
+//   var options = {
+//     url: 'https://api.spotify.com/v1/me/player/recently-played',
+//     headers: { 'Authorization': 'Bearer ' + access_token },
+//     json: true
+//   }
+//   request.get(options, function(error, response, body) {
+//     console.log(body)
+//
+//   })
+//
+// })
+
+app.get('/get_recently_played_tracks', function(req, res) {
+  var access_token = req.query.access_token
+  var options = {
+    url: 'https://api.spotify.com/v1/me/player/recently-played',
+    headers: { 'Authorization': 'Bearer ' + access_token },
+    json: true
+  }
+  request
+    .get(options)
+    .on('error', function(err) {
+      console.log(err)
+    })
+    .pipe(fs.createWriteStream('recently_played.txt'))
 
 })
 

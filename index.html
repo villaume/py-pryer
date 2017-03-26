@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
   <head>
-    <title>Example of the Authorization Code flow with Spotify</title>
+    <title>Prying for the Weekend</title>
     <script type="text/javascript" src="http://code.jquery.com/jquery-1.10.1.min.js" onload="window.$ = window.jQuery = module.exports;"></script>
     <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
     <style type="text/css">
@@ -18,10 +18,29 @@
   </head>
 
   <body>
+    <div style="margin:100px;">
+    <nav class="navbar navbar-inverse navbar-static-top">
+  <div class="container">
+    <a class="navbar-brand" href="/">Prying for the Weekend</a>
+    <ul class="nav navbar-nav">
+      <li class="active">
+        <a href="/">Home</a>
+      </li>
+      <li>
+        <a href="https://developer.spotify.com/web-api/">Api endpoints</a>
+      </li>
+      <li>
+        <a href="/about">Air Table</a>
+      </li>
+      <li>
+        <a href="https://github.com/villaume/py-pryer/">Github</a>
+      </li>
+    </ul>
+  </div>
+  </nav>
     <div class="container">
       <div id="login">
-        <h1>This is an example of the Authorization Code flow</h1>
-        <a href="/login" class="btn btn-primary">Log in with Spotify</a>
+        <a href="/login" class="btn btn-primary">Unleash heaven</a>
       </div>
       <div id="loggedin">
         <div id="user-profile">
@@ -32,29 +51,25 @@
         <button class="btn btn-default" id="get_playlists">Get Playlists</button>
         <button class="btn btn-default" id="get_songs">Get Tracks</button>
         <button class="btn btn-default" id="get_everything">Get Tracks in all Playlists</button>
+        <button class="btn btn-default" id="get_recently_played_tracks">Get Buck</button>
       </div>
     </div>
 
     <script id="user-profile-template" type="text/x-handlebars-template">
-      <h1>Logged in as {{display_name}}</h1>
+      <div class="jumbotron"  >
+      <h1>{{id}}</h1>
       <div class="media">
-        <div class="pull-left">
-          <img class="media-object" width="150" src="{{images.0.url}}" />
-        </div>
         <div class="media-body">
           <dl class="dl-horizontal">
-            <dt>Display name</dt><dd class="clearfix">{{display_name}}</dd>
             <dt>Id</dt><dd>{{id}}</dd>
-            <dt>Email</dt><dd>{{email}}</dd>
             <dt>Spotify URI</dt><dd><a href="{{external_urls.spotify}}">{{external_urls.spotify}}</a></dd>
-            <dt>Link</dt><dd><a href="{{href}}">{{href}}</a></dd>
-            <dt>Profile Image</dt><dd class="clearfix"><a href="{{images.0.url}}">{{images.0.url}}</a></dd>
             <dt>Country</dt><dd>{{country}}</dd>
           </dl>
         </div>
       </div>
+    </div>
     </script>
-
+  </div>
     <script id="oauth-template" type="text/x-handlebars-template">
       <h2>oAuth info</h2>
       <dl class="dl-horizontal">
@@ -151,6 +166,17 @@
           document.getElementById('get_songs').addEventListener('click', function() {
             $.ajax({
               url: '/get_songs',
+              data: {'refresh_token': refresh_token,
+                'access_token': access_token
+
+            }
+            }).done(function(data) {
+              console.log(data);
+            });
+          }, false);
+          document.getElementById('get_recently_played_tracks').addEventListener('click', function() {
+            $.ajax({
+              url: '/get_recently_played_tracks',
               data: {'refresh_token': refresh_token,
                 'access_token': access_token
 
