@@ -11,62 +11,34 @@ const _ = require('lodash')
 const Promise = require('bluebird')
 const fs = require('fs')
 const Transform = require('stream').Transform
-const debug = require('debug')('app-js')
+const debug = require('debug')('app')
+const rp = require('request-promise')
+const JSONStream = require('JSONStream')
+const through2 = require('through2')
 
+const promiseWhile = require('../lib/q_while')
+const generate_random_string = require('../lib/generate_random_string')
+
+let USR_ID
+
+// load config with credentials
 try {
-  var super_secret = yaml_config.readConfig(path.join(__dirname, '../config.yaml'))
+  var super_secret = yaml_config.readConfig(path.join(__dirname, '../config.yml'))
 }
 catch(err) {
-  debug('please enter client_id and secret in /config.yaml')
+  debug('please enter client_id and secret in /config.yml')
   super_secret = {}
 }
 
-const client_id =  super_secret.spotify.client_id // Your client id
-const client_secret = super_secret.spotify.client_secret // Your client secret
-const redirect_uri = super_secret.spotify.redirect_uri // Your redirect uri
-
-/**
- * Generates a random string containing numbers and letters
- * @param  {number} length The length of the string
- * @return {string} The generated string
- */
-
-var generateRandomString = function(length) {
-  var text = ''
-  var possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-
-  for (var i = 0; i < length; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length))
-  }
-  return text
-}
-
-var promiseWhile = function (condition, payload) {
-  var done = Q.defer()
-  function loop () {
-    if (!condition()) {
-      return done.resolve()
-    }
-    else {
-      Q.when(payload(), loop, done.reject)
-    }
-  }
-  Q.nextTick(loop)
-  return done.promise
-}
+const client_id =  super_secret.spotify.client_id // expect to find in ../config.yml see example-config.yml on format
+const client_secret = super_secret.spotify.client_secret // dito
+const redirect_uri = super_secret.spotify.redirect_uri //
 
 
-function squash(arr) {
-  const flat = [].concat(...arr)
-  return flat.some(Array.isArray) ? squash(flat) : flat
-}
-
-
-var get_all_personal_playlists = function(client, user_id) {
+var stream_all_personal_playlists = function(client, user_id) {
   var keep_going = true
   var counter = 0
-  var sink = []
-
+  var stream = new Transform({ objectMode: true })
   return promiseWhile(() => {
     return keep_going === true
   }, () => {
@@ -78,33 +50,37 @@ var get_all_personal_playlists = function(client, user_id) {
         } else {
           keep_going = true
         }
-
         var pwd_lists = _.reject(results.body.items, elem => {
           return elem.owner.id != user_id
         })
-        sink.push(pwd_lists)
-
+        var flattened = _.flattenDeep(pwd_lists)
+        flattened.forEach(elem => {
+          stream.push(JSON.stringify(elem) + '\n')
+        })
+        debug('iterating over playlists, at batch: '+counter)
       })
-
+      .then(() => {
+        return Promise.resolve()
+      })
   }).then(() => {
-    return squash(sink)
+    debug('pulled all self-owned playlists')
+    stream.push(null)
+    return stream
   })
 }
 
 
-var get_all_tracks_of_a_playlists = function(client, user_id, playlist_id, payload) {
+var get_all_tracks_of_a_playlists = function(client, user_id, playlist_id) {
   var keep_going = true
   var counter = 0
   var sink = []
-  payload = payload || {}
-
   return promiseWhile(() => {
     return keep_going === true
   }, () => {
     counter++
     return client.getPlaylistTracks(user_id,playlist_id,{ 'offset' : (counter-1)*100, 'limit' : 100})
       .then(results => {
-        //console.log('cnter_songs',counter)
+
         if (results.body.next === null) {
           keep_going = false
         } else {
@@ -118,19 +94,17 @@ var get_all_tracks_of_a_playlists = function(client, user_id, playlist_id, paylo
             track_added_at: elem.added_at
           }
         })
-        //console.log(results.body.items);
         sink.push(JSON.stringify(mapped_track_results))
 
       })
   }).then(() => {
-    return squash(sink)
+    return _.flattenDeep(sink)
   })
 }
 
 var get_all_playlists_and_tracks = function(client, user_id) {
   var keep_going = true
   var counter = 0
-  var payload = payload || {}
   var stream = new Transform({ objectMode: true })
 
   return promiseWhile(() => {
@@ -171,23 +145,42 @@ var get_all_playlists_and_tracks = function(client, user_id) {
               stream.push(JSON.stringify(formatting) + '\n')
             })
         }).then((originalArray) => {
-          console.log('iterating over playlists, at batch: '+counter)
+          debug('iterating over playlists, at batch: '+counter)
           return Promise.resolve(originalArray)
         })
-
       })
 
   }).then(() => {
-    console.log('pulled up to 100 tracks for all self-owned playlists')
+    debug('pulled up to 100 tracks for all self-owned playlists')
     stream.push(null)
     return stream
   })
 }
 
+var persist_playlists_to_file = function(client, user_id) {
+  var deferred = Q.defer()
+  const file_key = 'out/playlists.txt'
+  var upstream = fs.createWriteStream(file_key, {
+    encoding: 'UTF-8'
+  })
+  upstream
+    .on('error', deferred.reject)
+    .on('end', function () {
+      deferred.resolve(file_key)
+    })
+  stream_all_personal_playlists(client, user_id)
+    .then(result_stream => {
+      result_stream
+        .pipe(upstream)
+        .on('error', deferred.reject)
+    })
+  return deferred.promise
+}
+
 
 var get_everything = function(client, user_id) {
   var deferred = Q.defer()
-  const file_key = 'playlistsTracks.txt'
+  const file_key = 'out/playlistsTracks.txt'
   var upstream = fs.createWriteStream(file_key, {
     encoding: 'UTF-8'
   })
@@ -214,7 +207,7 @@ app.use(express.static(path.join(__dirname, '../')))
 
 app.get('/login', function(req, res) {
 
-  var state = generateRandomString(16)
+  var state = generate_random_string(16)
   res.cookie(stateKey, state)
 
   // your application requests authorization
@@ -269,9 +262,8 @@ app.get('/callback', function(req, res) {
 
         // use the access token to access the Spotify Web API
         request.get(options, function(error, response, body) {
-          console.log(body)
+          USR_ID = body.id
           return USR_ID = body.id
-          //console.log({{id}});
         })
 
         // we can also pass the token to the browser to make requests from there
@@ -315,7 +307,6 @@ app.get('/refresh_token', function(req, res) {
 })
 
 app.get('/get_playlists', function(req, res) {
-  var refresh_token = req.query.refresh_token
   var access_token = req.query.access_token
   var spotifyApi = new SpotifyWebApi({
     client_id,
@@ -323,15 +314,13 @@ app.get('/get_playlists', function(req, res) {
     redirect_uri
   })
   spotifyApi.setAccessToken(access_token)
-  get_all_personal_playlists(spotifyApi, USR_ID)
-    .then(rza => {
-      console.log(rza)
-    })
-
+  persist_playlists_to_file(spotifyApi, USR_ID)
+  .then(rza => {
+    debug(rza)
+  })
 })
 
 app.get('/get_songs', function(req, res) {
-  var refresh_token = req.query.refresh_token
   var access_token = req.query.access_token
   var spotifyApi = new SpotifyWebApi({
     client_id,
@@ -339,10 +328,9 @@ app.get('/get_songs', function(req, res) {
     redirect_uri
   })
   spotifyApi.setAccessToken(access_token)
-
   get_all_tracks_of_a_playlists(spotifyApi,USR_ID,'4pXJ8l5OAwWHKswqvA4Le5')
   .then(rza => {
-    console.log('all_tracks:',rza)
+    debug('all_tracks:',rza)
   })
 
 })
@@ -358,39 +346,139 @@ app.get('/get_everything', function(req, res) {
   get_everything(spotifyApi, USR_ID)
   .then(rza => {
     debug(rza)
-
   })
-
 })
 
-// app.get('/get_recently_played_tracks', function(req, res) {
-//   var access_token = req.query.access_token
-//   var options = {
-//     url: 'https://api.spotify.com/v1/me/player/recently-played',
-//     headers: { 'Authorization': 'Bearer ' + access_token },
-//     json: true
-//   }
-//   request.get(options, function(error, response, body) {
-//     console.log(body)
-//
-//   })
-//
-// })
+var get_recent_played = function(options) {
+  var keep_going = true
+  var counter = 0
+  var stream = new Transform({ objectMode: true })
+  debug('trying to get recently played tracks')
+  return promiseWhile(() => {
+    return keep_going === true
+  }, () => {
+    counter++
+    return rp(options)
+      .then(results => {
+        debug(results)
+        if (counter > 2) {
+          keep_going = false
+        } else {
+          keep_going = true
+          // options.qs.before = results.cursors.before
+        }
+        debug('counter',counter)
+        _.forEach(results.items, elem => {
+          stream.push(JSON.stringify({
+            track_name: elem.track.name,
+            track_id: elem.track.id,
+            track_artist_name: elem.track.artists[0].name,
+            track_artist_id: elem.track.artists[0].id,
+            track_album_name: elem.track.album.name,
+            track_album_id: elem.track.album.id,
+            track_popularity: elem.track.popularity,
+            track_played_at: elem.played_at
+          }) + '\n')
+        })
+      })
+  }).then(() => {
+    debug('done pulling recent.. 50 is the limit')
+    stream.push(null)
+    return stream
+  })
+}
+
+var sunker = function(options) {
+  var deferred = Q.defer()
+  const file_key = 'out/tracks_recently_played.txt'
+  var upstream = fs.createWriteStream(file_key, {
+    encoding: 'UTF-8'
+  })
+  upstream
+    .on('error', deferred.reject)
+    .on('end', function () {
+      deferred.resolve(file_key)
+    })
+  get_recent_played(options)
+    .then(result_stream => {
+      result_stream
+        .pipe(upstream)
+        .on('error', deferred.reject)
+    })
+  return deferred.promise
+}
+
 
 app.get('/get_recently_played_tracks', function(req, res) {
   var access_token = req.query.access_token
+  var propertiesObject = { limit:10 }
   var options = {
     url: 'https://api.spotify.com/v1/me/player/recently-played',
     headers: { 'Authorization': 'Bearer ' + access_token },
-    json: true
+    json: true,
+    qs:propertiesObject
+    //resolveWithFullResponse: true
   }
-  request
-    .get(options)
-    .on('error', function(err) {
-      console.log(err)
-    })
-    .pipe(fs.createWriteStream('recently_played.txt'))
+  sunker(options)
+  .then(rza => {
+    debug(rza)
 
+  })
+})
+
+var getStream = function (file_name, parse_key) {
+  var stream = fs.createReadStream(file_name, {encoding: 'utf8'}),
+    parser = JSONStream.parse(parse_key)
+  return stream.pipe(parser)
+}
+
+var iter_over_pulled_tracks = function(options) {
+  var all = []
+  var deferred = Q.defer()
+  const file_key = 'out/tracks_audio_profile.txt'
+  var stream = new Transform({ objectMode: true })
+  var upstream = fs.createWriteStream(file_key, {
+    encoding: 'UTF-8'
+  })
+  const map_stream = through2({ objectMode: true }, function (data, encoding, callback) {
+    options.qs.ids = data
+    rp(options)
+      .then(aud_response => {
+        stream.push(aud_response.audio_features)
+        return callback(null, aud_response)
+      })
+
+  })
+  getStream('pl1.txt','tracks.*.track_id') //playlistsTracks
+    .pipe(map_stream)
+    .on('data', function (data) {
+      all.push(JSON.stringify(data.audio_features[0]) + '\n')
+    })
+    .on('end', () => {
+      upstream.on('error', err => { debug('error writing audio_profiles',err) })
+      all.forEach(v => { upstream.write(v)})
+      upstream.end()
+      deferred.resolve(file_key)
+    })
+    .on('error', deferred.reject)
+  return deferred.promise
+}
+
+app.get('/get_audio_profile_all_tracks', function(req, res) {
+  var access_token = req.query.access_token
+  var propertiesObject = {ids:'5WXdaG8d8N7S4rDpbGqBMY,06iHk4N4gngQ747CaZYMyZ' }
+
+  var options = {
+    url: 'https://api.spotify.com/v1/audio-features',
+    headers: { 'Authorization': 'Bearer ' + access_token },
+    json: true,
+    qs:propertiesObject
+  }
+  iter_over_pulled_tracks(options)
+  .then(rza => {
+    debug(rza)
+
+  })
 })
 
 app.listen(8888)

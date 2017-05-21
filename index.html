@@ -30,9 +30,6 @@
         <a href="https://developer.spotify.com/web-api/">Api endpoints</a>
       </li>
       <li>
-        <a href="/about">Air Table</a>
-      </li>
-      <li>
         <a href="https://github.com/villaume/py-pryer/">Github</a>
       </li>
     </ul>
@@ -47,27 +44,14 @@
         </div>
         <div id="oauth">
         </div>
-        <button class="btn btn-default" id="obtain-new-token">Obtain new token using the refresh token</button>
+        <button class="btn btn-default" id="obtain-new-token">Refresh token</button>
         <button class="btn btn-default" id="get_playlists">Get Playlists</button>
-        <button class="btn btn-default" id="get_songs">Get Tracks</button>
         <button class="btn btn-default" id="get_everything">Get Tracks in all Playlists</button>
-        <button class="btn btn-default" id="get_recently_played_tracks">Get Buck</button>
+        <button class="btn btn-default" id="get_recently_played_tracks">Get Recently Played Tracks</button>
+        <button class="btn btn-default" id="get_audio_profile_all_tracks">Get AudioProfile</button>
       </div>
     </div>
-
     <script id="user-profile-template" type="text/x-handlebars-template">
-      <div class="jumbotron"  >
-      <h1>{{id}}</h1>
-      <div class="media">
-        <div class="media-body">
-          <dl class="dl-horizontal">
-            <dt>Id</dt><dd>{{id}}</dd>
-            <dt>Spotify URI</dt><dd><a href="{{external_urls.spotify}}">{{external_urls.spotify}}</a></dd>
-            <dt>Country</dt><dd>{{country}}</dd>
-          </dl>
-        </div>
-      </div>
-    </div>
     </script>
   </div>
     <script id="oauth-template" type="text/x-handlebars-template">
@@ -157,19 +141,7 @@
               url: '/get_playlists',
               data: {'refresh_token': refresh_token,
                 'access_token': access_token
-
-            }
-            }).done(function(data) {
-              console.log(data);
-            });
-          }, false);
-          document.getElementById('get_songs').addEventListener('click', function() {
-            $.ajax({
-              url: '/get_songs',
-              data: {'refresh_token': refresh_token,
-                'access_token': access_token
-
-            }
+              }
             }).done(function(data) {
               console.log(data);
             });
@@ -179,8 +151,17 @@
               url: '/get_recently_played_tracks',
               data: {'refresh_token': refresh_token,
                 'access_token': access_token
-
-            }
+              }
+            }).done(function(data) {
+              console.log(data);
+            });
+          }, false);
+          document.getElementById('get_audio_profile_all_tracks').addEventListener('click', function() {
+            $.ajax({
+              url: '/get_audio_profile_all_tracks',
+              data: {'refresh_token': refresh_token,
+                'access_token': access_token
+              }
             }).done(function(data) {
               console.log(data);
             });
@@ -190,8 +171,7 @@
               url: '/get_everything',
               data: {'refresh_token': refresh_token,
                 'access_token': access_token
-
-            }
+              }
             }).done(function(data) {
               console.log(data);
             });
