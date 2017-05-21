@@ -1,23 +1,25 @@
 {
   "name": "py-pryer",
   "version": "1.0.0",
-  "description": "A minimal Electron application",
+  "description": "A minimal Electron application to pull data from Spotify",
+  "author": "Erik Villaume",
+  "license": "MIT",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "mocha": "./node_modules/mocha/bin/mocha --recursive test/",
+    "test": "npm run mocha"
   },
   "repository": "https://github.com/electron/electron-quick-start",
   "keywords": [
     "Electron",
-    "quick",
-    "start",
-    "tutorial",
+    "Spotify",
+    "OAuth",
     "demo"
   ],
-  "author": "GitHub",
-  "license": "CC0-1.0",
   "devDependencies": {
     "babel-eslint": "7.2.1",
+    "chai": "^3.5.0",
     "eslint": "3.16.1",
     "eslint-config-standard": "7.0.0-beta.0",
     "eslint-plugin-import": "^2.2.0",
@@ -25,7 +27,8 @@
     "eslint-plugin-mocha": "4.9.0",
     "eslint-plugin-promise": "3.4.2",
     "eslint-plugin-react": "^6.10.3",
-    "eslint-plugin-standard": "2.0.1"
+    "eslint-plugin-standard": "2.0.1",
+    "mocha": "^3.4.1"
   },
   "dependencies": {
     "bluebird": "^3.4.6",
@@ -38,7 +41,6 @@
     "q": "^1.4.1",
     "querystring": "~0.2.0",
     "request": "~2.34.0",
-    "request-promise": "^4.1.1",
     "spotify-web-api-node": "^2.3.5",
     "yaml-config": "0.3.0"
   }

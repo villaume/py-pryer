@@ -1,5 +1,5 @@
 node_modules/
 creds/
-config.yaml
+config.yml
 
-playlistsTracks.txt
+out/
