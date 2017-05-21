@@ -449,7 +449,7 @@ var iter_over_pulled_tracks = function(options) {
       })
 
   })
-  getStream('pl1.txt','tracks.*.track_id') //playlistsTracks
+  getStream('example_out/playlistsTracks.txt','tracks.*.track_id') //playlistsTracks
     .pipe(map_stream)
     .on('data', function (data) {
       all.push(JSON.stringify(data.audio_features[0]) + '\n')
